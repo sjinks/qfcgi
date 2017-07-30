@@ -17,3 +17,6 @@ before_script:
 
 script:
   - make -s check
+
+after_success:
+  - ./.travis/after_success.sh
