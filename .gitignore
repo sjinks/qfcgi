@@ -1,0 +1,15 @@
+/coverage/
+.tracefile
+.qmake.stash
+*.pro.user
+Makefile
+Makefile.*
+*.gcno
+*.gcda
+*.o
+*.prl
+*.moc
+*.a
+moc_*.cpp
+target_wrapper.sh
+/tests/*/*test
