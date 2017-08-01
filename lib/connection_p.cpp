@@ -46,7 +46,6 @@ FastCGI::LowLevel::ConnectionPrivate::~ConnectionPrivate()
 
 void FastCGI::LowLevel::ConnectionPrivate::_q_readyRead()
 {
-//	Q_Q(FastCGI::Connection);
 	SocketInfo& info = this->m_info;
 	while (this->m_sock && this->m_sock->bytesAvailable() > 0) {
 		if (SocketInfo::BeforeHeader == info.state) {
@@ -123,7 +122,7 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_disconnected()
 	if (this->m_sock) {
 		Q_Q(FastCGI::LowLevel::Connection);
 		this->disconnectSocketSignals();
-		this->m_sock.reset(Q_NULLPTR);
+		this->m_sock.reset();
 		Q_EMIT q->disconnected();
 	}
 }
@@ -136,7 +135,7 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_error()
 
 	if (this->m_sock) {
 		this->disconnectSocketSignals();
-		this->m_sock.reset(Q_NULLPTR);
+		this->m_sock.reset();
 	}
 }
 
@@ -149,12 +148,12 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_requestFinished(quint16 id)
 
 	if ((x = qobject_cast<QAbstractSocket*>(this->m_sock.data())) != Q_NULLPTR) {
 		if (x->state() != QAbstractSocket::ConnectedState) {
-			this->m_sock.reset(Q_NULLPTR);
+			this->m_sock.reset();
 		}
 	}
 	else if ((y = qobject_cast<QLocalSocket*>(this->m_sock.data())) != Q_NULLPTR) {
 		if (y->state() != QLocalSocket::ConnectedState) {
-			this->m_sock.reset(Q_NULLPTR);
+			this->m_sock.reset();
 		}
 	}
 }
@@ -206,9 +205,11 @@ void FastCGI::LowLevel::ConnectionPrivate::processBeginRequestRecord()
 	auto role  = b.getRole();
 
 	Request* req = new Request(reqid, b, this->m_sock);
+	req->setParent(q);
 	QObject::connect(req, SIGNAL(requestFinished(quint16)), q, SLOT(_q_requestFinished(quint16)), Qt::QueuedConnection);
 
 	if (role < FCGI_ROLE_MIN || role > FCGI_ROLE_MAX) {
+		Q_EMIT req->protocolError();
 		req->finish(FastCGI::LowLevel::UnknownRole);
 		return;
 	}
@@ -250,7 +251,7 @@ void FastCGI::LowLevel::ConnectionPrivate::killSocket()
 			}
 		}
 
-		this->m_sock.clear();
+		this->m_sock.reset();
 	}
 }
 
