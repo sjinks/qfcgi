@@ -22,6 +22,8 @@ FastCGI::LowLevel::ConnectionPrivate::ConnectionPrivate(QIODevice* sock, Connect
 	if (!reg) {
 		qRegisterMetaType<QAbstractSocket::SocketError>();
 		qRegisterMetaType<QLocalSocket::LocalSocketError>();
+		qRegisterMetaType<FastCGI::LowLevel::Request*>();
+		qRegisterMetaType<QList<QPair<QByteArray, QByteArray> > >();
 		reg = true;
 	}
 
@@ -110,18 +112,7 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_readyRead()
 				this->processBeginRequestRecord();
 			}
 			else {
-				if (!this->processOtherRecord()) {
-					// Got malformed input from the peer.
-					auto it = this->m_info.reqs.find(this->m_info.hdr.h.getRequestId());
-					if (it != this->m_info.reqs.end()) {
-						// Trying to abort gracefully
-						Request* req = it.value();
-						req->finish(FastCGI::LowLevel::Complete, quint32(-1));
-					}
-					else {
-						this->killSocket();
-					}
-				}
+				this->processOtherRecord();
 			}
 		}
 	}
@@ -226,33 +217,14 @@ void FastCGI::LowLevel::ConnectionPrivate::processBeginRequestRecord()
 	Q_EMIT q->newRequest(req);
 }
 
-bool FastCGI::LowLevel::ConnectionPrivate::processOtherRecord()
+void FastCGI::LowLevel::ConnectionPrivate::processOtherRecord()
 {
 	// (3.3) While a request ID R is inactive, the application ignores records with requestId == R, except for FCGI_BEGIN_REQUEST records
 	auto it = this->m_info.reqs.find(this->m_info.hdr.h.getRequestId());
 	if (it != this->m_info.reqs.end()) {
 		Request* req = it.value();
-		switch (this->m_info.hdr.h.getType()) {
-			case FCGI_ABORT_REQUEST:
-				Q_EMIT req->abortRequest();
-				return true;
-
-			case FCGI_PARAMS:
-				return req->d_func()->appendParams(this->m_info.buf);
-
-			case FCGI_STDIN:
-				return req->d_func()->appendStdin(this->m_info.buf);
-
-			case FCGI_DATA:
-				return req->d_func()->appendData(this->m_info.buf);
-
-			default:
-				// Unknown record type, ignoring
-				break;
-		}
+		QMetaObject::invokeMethod(req, "_q_processRecord", Qt::QueuedConnection, Q_ARG(quint8, this->m_info.hdr.h.getType()), Q_ARG(QByteArray, this->m_info.buf));
 	}
-
-	return true;
 }
 
 void FastCGI::LowLevel::ConnectionPrivate::disconnectSocketSignals()

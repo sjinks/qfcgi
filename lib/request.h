@@ -43,6 +43,7 @@ Q_SIGNALS:
 	void dataDataReady(const QByteArray& data);
 	void dataRead();
 	void requestFinished(quint16 id);
+	void protocolError();
 
 private:
 	friend class ConnectionPrivate;
@@ -54,6 +55,8 @@ private:
 	Q_DISABLE_COPY(Request)
 	Q_DECLARE_PRIVATE(Request)
 	QScopedPointer<RequestPrivate> d_ptr;
+
+	Q_PRIVATE_SLOT(d_func(), void _q_processRecord(quint8, const QByteArray&))
 };
 
 } // namespace LowLevel

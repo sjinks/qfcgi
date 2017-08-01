@@ -156,3 +156,40 @@ void FastCGI::LowLevel::RequestPrivate::setFlags(quint8 flags)
 {
 	this->flags = flags;
 }
+
+bool FastCGI::LowLevel::RequestPrivate::_q_processRecord(quint8 type, const QByteArray& payload)
+{
+	Q_Q(FastCGI::LowLevel::Request);
+	bool res = true;
+	switch (type) {
+		case FCGI_ABORT_REQUEST:
+			Q_EMIT q->abortRequest();
+			break;
+
+		case FCGI_PARAMS:
+			res = this->appendParams(payload);
+			break;
+
+		case FCGI_STDIN:
+			res = this->appendStdin(payload);
+			break;
+
+		case FCGI_DATA:
+			res = this->appendData(payload);
+			break;
+
+		default:
+			// Unknown record type
+			res = false;
+			break;
+	}
+
+	if (!res) {
+		Q_EMIT q->protocolError();
+		q->finish(FastCGI::LowLevel::Complete, quint32(-1));
+	}
+
+	return res;
+}
+
+#include "moc_request.cpp"

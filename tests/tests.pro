@@ -3,4 +3,5 @@ TEMPLATE = subdirs
 SUBDIRS = \
 	utilstest \
 	outputstreamtest \
-	requesttest
+	requesttest \
+    connectiontest

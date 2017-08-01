@@ -1,4 +1,3 @@
-#include <QtCore/QDebug>
 #include <QtCore/QBuffer>
 #include <QtCore/QSharedPointer>
 #include <QtTest/QSignalSpy>
@@ -20,7 +19,7 @@ public:
 
 private:
 	QSharedPointer<QBuffer> m_buf;
-	FastCGI::LowLevel::Request* m_req;
+	QPointer<FastCGI::LowLevel::Request> m_req;
 
 private Q_SLOTS:
 	void init()
@@ -38,10 +37,14 @@ private Q_SLOTS:
 
 	void cleanup()
 	{
-		if (this->m_req) {
+		if (!this->m_req.isNull()) {
 			QSignalSpy spy(this->m_req, SIGNAL(requestFinished(quint16)));
 			delete this->m_req;
 			QCOMPARE(spy.count(), 0);
+			QCOMPARE(this->m_req.isNull(), true);
+		}
+		else {
+			qWarning("!!!");
 		}
 
 		this->m_buf->close();
@@ -90,15 +93,16 @@ private Q_SLOTS:
 		QFETCH(QList<QByteArrayPair>, res_expected);
 
 		QSignalSpy spy(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(input);
+		f = d->_q_processRecord(FCGI_PARAMS, input);
 		QCOMPARE(f, true);
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy.count(), 1);
@@ -116,6 +120,8 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->stdErr()->type(), quint8(FCGI_STDERR));
 		QCOMPARE(this->m_req->stdOut()->requestId(), this->m_req->id());
 		QCOMPARE(this->m_req->stdErr()->requestId(), this->m_req->id());
+
+		QCOMPARE(spy_rf.count(), 0);
 	}
 
 	void testAppendParamsSeveralChunks_data()
@@ -131,6 +137,7 @@ private Q_SLOTS:
 		QFETCH(QList<QByteArrayPair>, res_expected);
 
 		QSignalSpy spy(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		int chunk_size = input.size() / 3;
 		int offset     = 0;
@@ -139,14 +146,14 @@ private Q_SLOTS:
 		while (offset < input.size()) {
 			QVERIFY(this->m_req->stdOut() == nullptr);
 			QVERIFY(this->m_req->stdErr() == nullptr);
-			f = d->appendParams(input.mid(offset, chunk_size));
+			f = d->_q_processRecord(FCGI_PARAMS, input.mid(offset, chunk_size));
 			QCOMPARE(f, true);
 			offset += chunk_size;
 		}
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy.count(), 1);
@@ -164,6 +171,8 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->stdErr()->type(), quint8(FCGI_STDERR));
 		QCOMPARE(this->m_req->stdOut()->requestId(), this->m_req->id());
 		QCOMPARE(this->m_req->stdErr()->requestId(), this->m_req->id());
+
+		QCOMPARE(spy_rf.count(), 0);
 	}
 
 	void testAppendBadParams_data()
@@ -195,17 +204,20 @@ private Q_SLOTS:
 		QFETCH(QList<QByteArrayPair>, res_expected);
 
 		QSignalSpy spy(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(input);
+		f = d->_q_processRecord(FCGI_PARAMS, input);
 		QCOMPARE(f, true);
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, false);
 		QCOMPARE(spy.count(), 0);
+
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testAppendParamsAfterEOF()
@@ -214,10 +226,11 @@ private Q_SLOTS:
 		FastCGI::LowLevel::RequestPrivate* d = this->m_req->d_func();
 
 		QSignalSpy spy(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy.count(), 1);
@@ -237,8 +250,12 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->stdOut()->requestId(), this->m_req->id());
 		QCOMPARE(this->m_req->stdErr()->requestId(), this->m_req->id());
 
-		f = d->appendParams(QByteArray());
+		QCOMPARE(spy_rf.count(), 0);
+
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, false);
+
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void test_appendStdin()
@@ -247,10 +264,11 @@ private Q_SLOTS:
 		FastCGI::LowLevel::RequestPrivate* d = this->m_req->d_func();
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -262,11 +280,11 @@ private Q_SLOTS:
 		QByteArray buf2(", ");
 		QByteArray buf3("World!\n");
 
-		f = d->appendStdin(buf1);
+		f = d->_q_processRecord(FCGI_STDIN, buf1);
 		QCOMPARE(f, true);
-		f = d->appendStdin(buf2);
+		f = d->_q_processRecord(FCGI_STDIN, buf2);
 		QCOMPARE(f, true);
-		f = d->appendStdin(buf3);
+		f = d->_q_processRecord(FCGI_STDIN, buf3);
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_sdr.count(), 3);
@@ -285,10 +303,12 @@ private Q_SLOTS:
 		QCOMPARE(params[0].type(), QVariant::ByteArray);
 		QCOMPARE(params[0].toByteArray(), buf3);
 
-		f = d->appendStdin(QByteArray());
+		f = d->_q_processRecord(FCGI_STDIN, QByteArray());
 		QCOMPARE(f, true);
 		QCOMPARE(spy_sdr.count(), 0);
 		QCOMPARE(spy_sr.count(), 1);
+
+		QCOMPARE(spy_rf.count(), 0);
 	}
 
 	void testAppendStdinAfterEOF()
@@ -297,10 +317,11 @@ private Q_SLOTS:
 		FastCGI::LowLevel::RequestPrivate* d = this->m_req->d_func();
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -310,21 +331,25 @@ private Q_SLOTS:
 
 		QByteArray buf("Hello!");
 
-		f = d->appendStdin(buf);
+		f = d->_q_processRecord(FCGI_STDIN, buf);
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_sdr.count(), 1);
 		QCOMPARE(spy_sr.count(), 0);
 
-		f = d->appendStdin(QByteArray());
+		f = d->_q_processRecord(FCGI_STDIN, QByteArray());
 		QCOMPARE(f, true);
 		QCOMPARE(spy_sdr.count(), 1);
 		QCOMPARE(spy_sr.count(), 1);
 
-		f = d->appendStdin(QByteArray());
+		QCOMPARE(spy_rf.count(), 0);
+
+		f = d->_q_processRecord(FCGI_STDIN, QByteArray());
 		QCOMPARE(f, false);
 		QCOMPARE(spy_sdr.count(), 1);
 		QCOMPARE(spy_sr.count(), 1);
+
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testAppendStdinBeforeParams()
@@ -334,14 +359,16 @@ private Q_SLOTS:
 
 		QSignalSpy spy_sdr(this->m_req, SIGNAL(stdinDataReady(const QByteArray&)));
 		QSignalSpy spy_sr(this->m_req, SIGNAL(stdinRead()));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QByteArray buf("Hello!");
 
-		f = d->appendStdin(buf);
+		f = d->_q_processRecord(FCGI_STDIN, buf);
 		QCOMPARE(f, false);
 
 		QCOMPARE(spy_sdr.count(), 0);
 		QCOMPARE(spy_sr.count(), 0);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testAppendStdinWithAuthorizer()
@@ -352,10 +379,11 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->role(), FastCGI::LowLevel::Authorizer);
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -365,11 +393,12 @@ private Q_SLOTS:
 
 		QByteArray buf("Hello!");
 
-		f = d->appendStdin(buf);
+		f = d->_q_processRecord(FCGI_STDIN, buf);
 		QCOMPARE(f, false);
 
 		QCOMPARE(spy_sdr.count(), 0);
 		QCOMPARE(spy_sr.count(), 0);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void test_appendData()
@@ -382,10 +411,11 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->role(), FastCGI::LowLevel::Filter);
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -397,11 +427,11 @@ private Q_SLOTS:
 		QByteArray buf2(", ");
 		QByteArray buf3("World!\n");
 
-		f = d->appendData(buf1);
+		f = d->_q_processRecord(FCGI_DATA, buf1);
 		QCOMPARE(f, true);
-		f = d->appendData(buf2);
+		f = d->_q_processRecord(FCGI_DATA, buf2);
 		QCOMPARE(f, true);
-		f = d->appendData(buf3);
+		f = d->_q_processRecord(FCGI_DATA, buf3);
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_ddr.count(), 3);
@@ -420,10 +450,12 @@ private Q_SLOTS:
 		QCOMPARE(params[0].type(), QVariant::ByteArray);
 		QCOMPARE(params[0].toByteArray(), buf3);
 
-		f = d->appendData(QByteArray());
+		f = d->_q_processRecord(FCGI_DATA, QByteArray());
 		QCOMPARE(f, true);
 		QCOMPARE(spy_ddr.count(), 0);
 		QCOMPARE(spy_dr.count(), 1);
+
+		QCOMPARE(spy_rf.count(), 0);
 	}
 
 	void test_appendDataAfterEOF()
@@ -436,10 +468,11 @@ private Q_SLOTS:
 		QCOMPARE(this->m_req->role(), FastCGI::LowLevel::Filter);
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -449,21 +482,23 @@ private Q_SLOTS:
 
 		QByteArray buf("Hello!");
 
-		f = d->appendData(buf);
+		f = d->_q_processRecord(FCGI_DATA, buf);
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_ddr.count(), 1);
 		QCOMPARE(spy_dr.count(), 0);
 
-		f = d->appendData(QByteArray());
+		f = d->_q_processRecord(FCGI_DATA, QByteArray());
 		QCOMPARE(f, true);
 		QCOMPARE(spy_ddr.count(), 1);
 		QCOMPARE(spy_dr.count(), 1);
+		QCOMPARE(spy_rf.count(), 0);
 
-		f = d->appendData(QByteArray());
+		f = d->_q_processRecord(FCGI_DATA, QByteArray());
 		QCOMPARE(f, false);
 		QCOMPARE(spy_ddr.count(), 1);
 		QCOMPARE(spy_dr.count(), 1);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testAppendDataBeforeParams()
@@ -473,14 +508,16 @@ private Q_SLOTS:
 
 		QSignalSpy spy_ddr(this->m_req, SIGNAL(dataDataReady(const QByteArray&)));
 		QSignalSpy spy_dr(this->m_req, SIGNAL(dataRead()));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QByteArray buf("Hello!");
 
-		f = d->appendData(buf);
+		f = d->_q_processRecord(FCGI_DATA, buf);
 		QCOMPARE(f, false);
 
 		QCOMPARE(spy_ddr.count(), 0);
 		QCOMPARE(spy_dr.count(), 0);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testAppendDataWithResponder()
@@ -489,10 +526,11 @@ private Q_SLOTS:
 		FastCGI::LowLevel::RequestPrivate* d = this->m_req->d_func();
 
 		QSignalSpy spy_pp(this->m_req, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
 
 		QVERIFY(this->m_req->stdOut() == nullptr);
 		QVERIFY(this->m_req->stdErr() == nullptr);
-		f = d->appendParams(QByteArray());
+		f = d->_q_processRecord(FCGI_PARAMS, QByteArray());
 		QCOMPARE(f, true);
 
 		QCOMPARE(spy_pp.count(), 1);
@@ -502,11 +540,12 @@ private Q_SLOTS:
 
 		QByteArray buf("Hello!");
 
-		f = d->appendData(buf);
+		f = d->_q_processRecord(FCGI_DATA, buf);
 		QCOMPARE(f, false);
 
 		QCOMPARE(spy_ddr.count(), 0);
 		QCOMPARE(spy_dr.count(), 0);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 
 	void testFinish()
@@ -517,10 +556,6 @@ private Q_SLOTS:
 
 		QList<QVariant> args = spy.takeFirst();
 		QCOMPARE(args[0].value<quint16>(), quint16(2));
-
-		// finish() will do this->deleteLater(), therefore we clear m_req
-		// in order not to crash in cleanup()
-		this->m_req = nullptr;
 
 		QCOMPARE(this->m_buf->isOpen(), false);
 		QCOMPARE(this->m_buf->buffer().toHex(), QByteArray("0103000200080000deadc0de00000000"));
@@ -538,10 +573,6 @@ private Q_SLOTS:
 		QList<QVariant> args = spy.takeFirst();
 		QCOMPARE(args[0].value<quint16>(), quint16(2));
 
-		// finish() will do this->deleteLater(), therefore we clear m_req
-		// in order not to crash in cleanup()
-		this->m_req = nullptr;
-
 		QCOMPARE(this->m_buf->isOpen(), true);
 		QCOMPARE(this->m_buf->buffer().toHex(), QByteArray("0103000200080000deadc0de00000000"));
 	}
@@ -554,6 +585,24 @@ private Q_SLOTS:
 		this->m_req->d_func()->finish(FastCGI::LowLevel::Complete, 0xDEADC0DEu);
 		QCOMPARE(this->m_buf->isOpen(), false);
 		QCOMPARE(this->m_buf->buffer().toHex(), QByteArray("0103000200080000deadc0de00000000"));
+	}
+
+	void testAbortRequest()
+	{
+		QSignalSpy spy(this->m_req, SIGNAL(abortRequest()));
+		this->m_req->d_func()->_q_processRecord(FCGI_ABORT_REQUEST, QByteArray());
+		QCOMPARE(spy.count(), 1);
+	}
+
+	void testUnknownRecord()
+	{
+		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
+		QSignalSpy spy_pe(this->m_req, SIGNAL(protocolError()));
+
+		this->m_req->d_func()->_q_processRecord(0xFF, QByteArray());
+
+		QCOMPARE(spy_pe.count(), 1);
+		QCOMPARE(spy_rf.count(), 1);
 	}
 };
 

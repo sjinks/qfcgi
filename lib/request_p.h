@@ -25,10 +25,6 @@ public:
 	RequestPrivate(quint16 id, const FastCGI::Protocol::BeginRequest& rec, Request* q, const QSharedPointer<QIODevice>& sock);
 	~RequestPrivate();
 
-	bool appendParams(const QByteArray& buf);
-	bool appendStdin(const QByteArray& buf);
-	bool appendData(const QByteArray& buf);
-
 	void finish(quint8 reason, quint32 code);
 
 	// For tests only
@@ -36,6 +32,8 @@ public:
 
 	// For tests only
 	void setFlags(quint8 flags);
+
+	bool _q_processRecord(quint8 type, const QByteArray& payload);
 
 private:
 	QSharedPointer<QIODevice> socket;
@@ -52,6 +50,10 @@ private:
 
 	OutputStream* stdout;
 	OutputStream* stderr;
+
+	bool appendParams(const QByteArray& buf);
+	bool appendStdin(const QByteArray& buf);
+	bool appendData(const QByteArray& buf);
 };
 
 } // namespace LowLevel

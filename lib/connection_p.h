@@ -33,7 +33,7 @@ private:
 
 	void processManagementRecord();
 	void processBeginRequestRecord();
-	bool processOtherRecord();
+	void processOtherRecord();
 
 	void disconnectSocketSignals();
 	void killSocket();
