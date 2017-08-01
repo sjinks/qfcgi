@@ -65,39 +65,6 @@ public:
 
 Q_STATIC_ASSERT_X(sizeof(BeginRequest) == 8, "sizeof(BeginRequest) must be 8");
 
-class Q_DECL_HIDDEN BeginRequestRecord {
-public:
-	BeginRequestRecord(quint16 role, quint8 flags)
-	{
-		this->s.b.role  = role;
-		this->s.b.flags = flags;
-		std::memset(this->s.b.reserved, 0, sizeof(this->s.b.reserved));
-	}
-
-	const void* raw() const Q_DECL_NOEXCEPT
-	{
-		return &this->s;
-	}
-
-	const Header& header() const
-	{
-		return *new(const_cast<header_t*>(&this->s.h)) Header(nullptr);
-	}
-
-	const BeginRequest& body() const
-	{
-		return *new(const_cast<begin_request_t*>(&this->s.b)) BeginRequest(nullptr);
-	}
-
-private:
-	struct {
-		header_t h;
-		begin_request_t b;
-	} s;
-};
-
-Q_STATIC_ASSERT_X(sizeof(BeginRequestRecord) == 16, "sizeof(BeginRequestRecord) must be 8");
-
 } // namespace Protocol
 } // namespace FastCGI
 
