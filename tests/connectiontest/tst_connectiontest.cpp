@@ -236,6 +236,29 @@ private Q_SLOTS:
 		QCOMPARE(spy_conn.count(), 0);
 		QCOMPARE(spy_pe.count(), 1);
 	}
+
+	void testDisconnnect()
+	{
+		QSignalSpy spy_cd(this->m_conn, SIGNAL(disconnected()));
+		this->m_client->close();
+		QTest::qWait(100);
+		QCOMPARE(spy_cd.count(), 1);
+	}
+
+	void testBadProtocol()
+	{
+		QByteArray header = QByteArray::fromHex("FF010001000800000");
+		QSignalSpy spy_pe(this->m_conn, SIGNAL(protocolError()));
+		QSignalSpy spy_cd(this->m_conn, SIGNAL(disconnected()));
+
+		qint64 nw = this->m_client->write(header);
+		QCOMPARE(nw, header.size());
+
+		QTest::qWait(100);
+
+		QCOMPARE(spy_pe.count(), 1);
+		QCOMPARE(spy_cd.count(), 0);
+	}
 };
 
 QTEST_GUILESS_MAIN(ConnectionTest)

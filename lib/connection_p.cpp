@@ -56,7 +56,6 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_readyRead()
 		if (SocketInfo::ReadingHeader == info.state) {
 			qint64 n = this->m_sock->read(reinterpret_cast<char*>(info.hdr.b) + info.read, static_cast<qint64>(sizeof(info.hdr) - static_cast<std::size_t>(info.read)));
 			if (n < 0) {
-				// TODO: report error
 				this->killSocket();
 				return;
 			}
@@ -90,7 +89,6 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_readyRead()
 					info.buf.append(buf);
 				}
 				else if (avail) {
-					// error
 					this->killSocket();
 					return;
 				}
@@ -240,7 +238,9 @@ void FastCGI::LowLevel::ConnectionPrivate::disconnectSocketSignals()
 
 void FastCGI::LowLevel::ConnectionPrivate::killSocket()
 {
+	Q_Q(FastCGI::LowLevel::Connection);
 	this->disconnectSocketSignals();
+	Q_EMIT q->protocolError();
 	if (this->m_sock) {
 		QAbstractSocket* x;
 		QLocalSocket* y;
