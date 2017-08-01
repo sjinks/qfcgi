@@ -129,13 +129,14 @@ void FastCGI::LowLevel::ConnectionPrivate::_q_disconnected()
 
 void FastCGI::LowLevel::ConnectionPrivate::_q_error()
 {
-//	Q_Q(FastCGI::Connection);
+	Q_Q(FastCGI::LowLevel::Connection);
 //	QIODevice* dev = qobject_cast<QIODevice*>(q->sender());
 //	qWarning("%s", qPrintable(dev->errorString()));
 
 	if (this->m_sock) {
 		this->disconnectSocketSignals();
 		this->m_sock.reset();
+		Q_EMIT q->disconnected();
 	}
 }
 
