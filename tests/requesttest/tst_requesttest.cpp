@@ -597,11 +597,7 @@ private Q_SLOTS:
 	void testUnknownRecord()
 	{
 		QSignalSpy spy_rf(this->m_req, SIGNAL(requestFinished(quint16)));
-		QSignalSpy spy_pe(this->m_req, SIGNAL(protocolError()));
-
 		this->m_req->d_func()->_q_processRecord(0xFF, QByteArray());
-
-		QCOMPARE(spy_pe.count(), 1);
 		QCOMPARE(spy_rf.count(), 1);
 	}
 };

@@ -142,6 +142,11 @@ private Q_SLOTS:
 		QSignalSpy spy_od(request, SIGNAL(destroyed()));
 		request->finish(FastCGI::LowLevel::Complete, 0);
 		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+
+		response_actual   = this->m_client->readAll();
+		response_expected = QByteArray::fromHex("010600010000000001030001000800000000000000000000");
+		QCOMPARE(response_actual, response_expected);
+
 		QTest::qWait(0);
 		QCOMPARE(spy_od.count(), 1);
 	}
@@ -177,6 +182,59 @@ private Q_SLOTS:
 		this->m_client->close();
 		QTest::qWait(100);
 		QCOMPARE(spy_cd.count(), 1);
+	}
+
+	void testGetValues()
+	{
+		QByteArray brr = QByteArray::fromHex("01010001000800000001010000000000");
+		QByteArray gvr = QByteArray::fromHex("0109000000000000");
+
+		QSignalSpy spy_conn(this->m_conn, SIGNAL(newRequest(FastCGI::LowLevel::Request*)));
+		qint64 nw = this->m_client->write(brr);
+		QCOMPARE(nw, brr.size());
+		this->m_client->flush();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(spy_conn.count(), 1);
+
+		QList<QVariant> args = spy_conn.takeFirst();
+		QCOMPARE(args[0].canConvert<FastCGI::LowLevel::Request*>(), true);
+		FastCGI::LowLevel::Request* request = args[0].value<FastCGI::LowLevel::Request*>();
+		QVERIFY(request != nullptr);
+
+		nw = this->m_client->write(gvr);
+		QCOMPARE(nw, gvr.size());
+		this->m_client->flush();
+
+		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+		QByteArray response_actual   = this->m_client->readAll();
+		QByteArray response_expected = QByteArray::fromHex("010a000000000000");
+		QCOMPARE(response_actual, response_expected);
+
+		QSignalSpy spy_cd(this->m_conn, SIGNAL(disconnected()));
+		request->finish(FastCGI::LowLevel::Complete, 0);
+		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+
+		response_actual   = this->m_client->readAll();
+		response_expected = QByteArray::fromHex("01030001000800000000000000000000");
+		QCOMPARE(response_actual, response_expected);
+
+		QCOMPARE(spy_cd.count(), 0);
+	}
+
+	void testInvalidRole()
+	{
+		QByteArray brr = QByteArray::fromHex("01010001000800000004010000000000");
+
+		QSignalSpy spy_conn(this->m_conn, SIGNAL(newRequest(FastCGI::LowLevel::Request*)));
+		QSignalSpy spy_pe(this->m_conn, SIGNAL(protocolError()));
+		qint64 nw = this->m_client->write(brr);
+		QCOMPARE(nw, brr.size());
+		this->m_client->flush();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(spy_conn.count(), 0);
+		QCOMPARE(spy_pe.count(), 1);
 	}
 };
 

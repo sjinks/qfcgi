@@ -6,6 +6,7 @@
 #include "protocol/endrequest_p.h"
 #include "request_p.h"
 #include "request.h"
+#include "connection.h"
 #include "connection_p.h"
 #include "outputstream.h"
 #include "utils.h"
@@ -185,7 +186,11 @@ bool FastCGI::LowLevel::RequestPrivate::_q_processRecord(quint8 type, const QByt
 	}
 
 	if (!res) {
-		Q_EMIT q->protocolError();
+		FastCGI::LowLevel::Connection* conn = qobject_cast<FastCGI::LowLevel::Connection*>(q->parent());
+		if (conn) {
+			Q_EMIT conn->protocolError();
+		}
+
 		q->finish(FastCGI::LowLevel::Complete, quint32(-1));
 	}
 

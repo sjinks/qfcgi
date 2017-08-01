@@ -43,7 +43,6 @@ Q_SIGNALS:
 	void dataDataReady(const QByteArray& data);
 	void dataRead();
 	void requestFinished(quint16 id);
-	void protocolError();
 
 private:
 	friend class ConnectionPrivate;

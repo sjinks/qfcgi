@@ -22,6 +22,7 @@ public:
 Q_SIGNALS:
 	void newRequest(FastCGI::LowLevel::Request* req);
 	void disconnected();
+	void protocolError();
 
 private:
 	Q_DECLARE_PRIVATE(Connection)

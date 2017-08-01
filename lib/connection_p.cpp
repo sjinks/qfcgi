@@ -185,8 +185,11 @@ void FastCGI::LowLevel::ConnectionPrivate::processManagementRecord()
 				quint16 len        = static_cast<quint16>(payload.size());
 				h.setContentLength(len);
 
-				this->m_sock->write(static_cast<const char*>(h.raw()), sizeof(h));
-				this->m_sock->write(payload);
+				QByteArray buf;
+				buf.append(static_cast<const char*>(h.raw()), sizeof(h));
+				buf.append(payload);
+
+				this->m_sock->write(buf, buf.size());
 				return;
 			}
 		}
@@ -210,7 +213,7 @@ void FastCGI::LowLevel::ConnectionPrivate::processBeginRequestRecord()
 	QObject::connect(req, SIGNAL(requestFinished(quint16)), q, SLOT(_q_requestFinished(quint16)), Qt::QueuedConnection);
 
 	if (role < FCGI_ROLE_MIN || role > FCGI_ROLE_MAX) {
-		Q_EMIT req->protocolError();
+		Q_EMIT q->protocolError();
 		req->finish(FastCGI::LowLevel::UnknownRole);
 		return;
 	}
