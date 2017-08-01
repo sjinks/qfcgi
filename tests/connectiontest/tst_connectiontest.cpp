@@ -6,6 +6,7 @@
 #include "connection.h"
 #include "request.h"
 #include "outputstream.h"
+#include "protocol/beginrequest_p.h"
 
 class ConnectionTest : public QObject {
 	Q_OBJECT
@@ -54,7 +55,7 @@ private Q_SLOTS:
 		delete this->m_client;
 	}
 
-	void test1()
+	void testRealRequest()
 	{
 		static QList<QByteArrayPair> params_expected = {
 			{ "QUERY_STRING",      ""                                  },
@@ -143,6 +144,39 @@ private Q_SLOTS:
 		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
 		QTest::qWait(0);
 		QCOMPARE(spy_od.count(), 1);
+	}
+
+	void testUnknownManagementRecord()
+	{
+		QByteArray brr = QByteArray::fromHex("01010001000800000001010000000000");
+		QByteArray umr = QByteArray::fromHex("01ff000000000000");
+
+		QSignalSpy spy_conn(this->m_conn, SIGNAL(newRequest(FastCGI::LowLevel::Request*)));
+		qint64 nw = this->m_client->write(brr);
+		QCOMPARE(nw, brr.size());
+		this->m_client->flush();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(spy_conn.count(), 1);
+
+		QList<QVariant> args = spy_conn.takeFirst();
+		QCOMPARE(args[0].canConvert<FastCGI::LowLevel::Request*>(), true);
+		FastCGI::LowLevel::Request* request = args[0].value<FastCGI::LowLevel::Request*>();
+		QVERIFY(request != nullptr);
+
+		nw = this->m_client->write(umr);
+		QCOMPARE(nw, umr.size());
+		this->m_client->flush();
+
+		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+		QByteArray response_actual   = this->m_client->readAll();
+		QByteArray response_expected = QByteArray::fromHex("010b000000080000ff00000000000000");
+		QCOMPARE(response_actual, response_expected);
+
+		QSignalSpy spy_cd(this->m_conn, SIGNAL(disconnected()));
+		this->m_client->close();
+		QTest::qWait(100);
+		QCOMPARE(spy_cd.count(), 1);
 	}
 };
 
