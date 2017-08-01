@@ -1,58 +1,86 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <QtCore/QCoreApplication>
+#include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtTest/QTest>
 #include <QtTest/QSignalSpy>
 #include "connection.h"
 #include "request.h"
+#include "outputstream.h"
 
 class ConnectionTest : public QObject {
 	Q_OBJECT
 public:
+	using QByteArrayPair = QPair<QByteArray, QByteArray>;
+
 	ConnectionTest()
-		: m_sr(nullptr), m_sw(nullptr)
+		: m_srv(new QLocalServer()), m_client(nullptr), m_server(nullptr)
 	{
 	}
 
 private:
-	QLocalSocket* m_sr;
-	QLocalSocket* m_sw;
-	FastCGI::LowLevel::Connection* m_conn;
+	QScopedPointer<QLocalServer> m_srv;
+	QPointer<QLocalSocket> m_client;
+	QPointer<QLocalSocket> m_server;
+	QPointer<FastCGI::LowLevel::Connection> m_conn;
 
 private Q_SLOTS:
 	void init()
 	{
-		int sv[2];
+		const QLatin1String server_name("fcgi");
+
 		bool f;
-		int res = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
-		QVERIFY(res != -1);
-
-		this->m_sr = new QLocalSocket(this);
-		this->m_sw = new QLocalSocket(this);
-
-		f = this->m_sr->setSocketDescriptor(sv[0]);
+		QLocalServer::removeServer(server_name);
+		f = this->m_srv->listen(server_name);
 		QCOMPARE(f, true);
 
-		f = this->m_sw->setSocketDescriptor(sv[1]);
-		QCOMPARE(f, true);
+		this->m_client = new QLocalSocket(this);
+		this->m_client->connectToServer(server_name);
 
-		this->m_conn = new FastCGI::LowLevel::Connection(this->m_sr);
+		QCoreApplication::processEvents();
+
+		QCOMPARE(this->m_srv->hasPendingConnections(), true);
+		this->m_server = this->m_srv->nextPendingConnection();
+
+		QVERIFY(this->m_server != nullptr);
+		this->m_conn = new FastCGI::LowLevel::Connection(this->m_server);
 	}
 
 	void cleanup()
 	{
+		this->m_srv->close();
 		delete this->m_conn;
-		delete this->m_sr;
-		delete this->m_sw;
-		this->m_sr   = nullptr;
-		this->m_sw   = nullptr;
-		this->m_conn = nullptr;
+
+		QVERIFY(this->m_server.isNull() == true);
+		delete this->m_client;
 	}
 
 	void test1()
 	{
+		static QList<QByteArrayPair> params_expected = {
+			{ "QUERY_STRING",      ""                                  },
+			{ "REQUEST_METHOD",    "GET"                               },
+			{ "CONTENT_TYPE",      ""                                  },
+			{ "CONTENT_LENGTH",    ""                                  },
+			{ "SCRIPT_NAME",       "/"                                 },
+			{ "REQUEST_URI",       "/"                                 },
+			{ "DOCUMENT_URI",      "/"                                 },
+			{ "DOCUMENT_ROOT",     "/home/xxxxxxxx/test.dev"           },
+			{ "SERVER_PROTOCOL",   "HTTP/1.0"                          },
+			{ "REQUEST_SCHEME",    "http"                              },
+			{ "GATEWAY_INTERFACE", "CGI/1.1"                           },
+			{ "SERVER_SOFTWARE",   "nginx/1.10.3"                      },
+			{ "REMOTE_ADDR",       "127.0.0.1"                         },
+			{ "REMOTE_PORT",       "45664"                             },
+			{ "SERVER_ADDR",       "127.0.0.1"                         },
+			{ "SERVER_PORT",       "8080"                              },
+			{ "SERVER_NAME",       "test.dev"                          },
+			{ "REDIRECT_STATUS",   "200"                               },
+			{ "SCRIPT_FILENAME",   "/home/xxxxxxxx/test.dev/index.php" },
+			{ "HTTP_HOST",         "127.0.0.1:8080"                    },
+			{ "HTTP_USER_AGENT",   "ApacheBench/2.3"                   },
+			{ "HTTP_ACCEPT",       "*/*"                               }
+		};
+
 		QByteArray buf = QByteArray::fromHex(
 			"010100010008000000010100000000000104000101e701000c00515545"
 			"52595f535452494e470e03524551554553545f4d4554484f444745540c"
@@ -76,9 +104,9 @@ private Q_SLOTS:
 		);
 
 		QSignalSpy spy_conn(this->m_conn, SIGNAL(newRequest(FastCGI::LowLevel::Request*)));
-		qint64 nw = this->m_sw->write(buf);
+		qint64 nw = this->m_client->write(buf);
 		QCOMPARE(nw, buf.size());
-		this->m_sw->flush();
+		this->m_client->flush();
 		QCoreApplication::processEvents();
 
 		QCOMPARE(spy_conn.count(), 1);
@@ -89,8 +117,32 @@ private Q_SLOTS:
 		QVERIFY(request != nullptr);
 
 		QSignalSpy spy_pp(request, SIGNAL(parametersParsed(const QList<QPair<QByteArray, QByteArray> >&)));
-		QCoreApplication::processEvents();;
+		QSignalSpy spy_sdr(request, SIGNAL(stdinDataReady(const QByteArray&)));
+		QSignalSpy spy_sr(request, SIGNAL(stdinRead()));
+		QCoreApplication::processEvents();
 		QCOMPARE(spy_pp.count(), 1);
+		QCOMPARE(spy_sdr.count(), 0);
+		QCOMPARE(spy_sr.count(), 1);
+
+		args = spy_pp.takeFirst();
+		QCOMPARE(args[0].canConvert<QList<QByteArrayPair> >(), true);
+		QList<QByteArrayPair> params_actual = args[0].value<QList<QPair<QByteArray, QByteArray> > >();
+		QCOMPARE(params_actual, params_expected);
+
+		QVERIFY(request->stdOut() != nullptr);
+		request->stdOut()->write("Status: 200 OK\r\n\r\nHello!\r\n");
+		request->stdOut()->flush();
+
+		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+		QByteArray response_actual   = this->m_client->readAll();
+		QByteArray response_expected = QByteArray::fromHex("01060001001a00005374617475733a20323030204f4b0d0a0d0a48656c6c6f210d0a");
+		QCOMPARE(response_actual, response_expected);
+
+		QSignalSpy spy_od(request, SIGNAL(destroyed()));
+		request->finish(FastCGI::LowLevel::Complete, 0);
+		QTRY_COMPARE(this->m_client->waitForReadyRead(100) || this->m_client->bytesAvailable(), true);
+		QTest::qWait(0);
+		QCOMPARE(spy_od.count(), 1);
 	}
 };
 
